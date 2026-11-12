@@ -28,17 +28,30 @@ def run_real_failure_simulation():
     db.initialize_schema()
     initial_db_count = db.get_total_count()
 
-    chaos_group_id = f"chaos-test-group-{int(time.time())}"
-    topic = settings.KAFKA_TOPIC
+    timestamp = int(time.time())
+    chaos_topic = f"ecommerce.chaos.{timestamp}"
+    chaos_group_id = f"chaos-group-{timestamp}"
+
+    # Ensure dedicated isolated topic for deterministic testing
+    try:
+        from confluent_kafka.admin import AdminClient, NewTopic
+        admin = AdminClient({'bootstrap.servers': settings.KAFKA_BOOTSTRAP_SERVERS})
+        fs = admin.create_topics([NewTopic(chaos_topic, num_partitions=1, replication_factor=1)])
+        for t, f in fs.items():
+            f.result()
+        time.sleep(1.0)
+    except Exception:
+        pass
 
     producer = EventProducer()
+    producer.topic = chaos_topic
 
     # Step 1: Produce 2 Distinct Batches to Kafka
     BATCH_1_COUNT = 1000
     BATCH_2_COUNT = 1000
     TOTAL_PRODUCED = BATCH_1_COUNT + BATCH_2_COUNT
 
-    print(f"\n1️⃣ Step 1: Emitting {TOTAL_PRODUCED:,} real messages into Kafka topic '{topic}'...")
+    print(f"\n1️⃣ Step 1: Emitting {TOTAL_PRODUCED:,} real messages into Kafka topic '{chaos_topic}'...")
     events_batch_1 = [EcommerceEvent.generate_random() for _ in range(BATCH_1_COUNT)]
     events_batch_2 = [EcommerceEvent.generate_random() for _ in range(BATCH_2_COUNT)]
 
@@ -50,6 +63,9 @@ def run_real_failure_simulation():
     # Step 2: Consumer Worker #1 starts and processes Batch 1
     print(f"\n2️⃣ Step 2: Consumer Worker #1 reads and commits Batch 1 ({BATCH_1_COUNT:,} events)...")
     consumer_1 = EventConsumer(group_id=chaos_group_id, db_manager=db)
+    consumer_1.topic = chaos_topic
+    if consumer_1._consumer:
+        consumer_1._consumer.subscribe([chaos_topic])
 
     # Poll Batch 1 from Kafka
     batch_1_received = []
@@ -102,6 +118,9 @@ def run_real_failure_simulation():
     # Step 5: Consumer Worker #2 restarts under same group ID
     print(f"\n5️⃣ Step 5: Consumer Worker #2 recovers and joins group '{chaos_group_id}'...")
     consumer_2 = EventConsumer(group_id=chaos_group_id, db_manager=db)
+    consumer_2.topic = chaos_topic
+    if consumer_2._consumer:
+        consumer_2._consumer.subscribe([chaos_topic])
 
     print("   🔁 Kafka re-delivers the uncommitted Batch 2 messages across network socket...")
     replayed_messages = []
