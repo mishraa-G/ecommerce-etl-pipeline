@@ -1,0 +1,13 @@
+# Core Streaming & Database
+confluent-kafka>=2.3.0
+psycopg2-binary>=2.9.9
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+
+# Monitoring & CLI
+rich>=13.7.0
+
+# Testing & Quality
+pytest>=7.4.0
+pytest-mock>=3.12.0
+
